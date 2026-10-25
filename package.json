@@ -5,9 +5,18 @@
   "type": "module",
   "description": "Checks npm for newer versions of this profile's registry-installed DSH plugins and updates them in one click.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YiZhiQvQ/dsh-plugin-update.git"
+  },
+  "homepage": "https://github.com/YiZhiQvQ/dsh-plugin-update#readme",
+  "bugs": {
+    "url": "https://github.com/YiZhiQvQ/dsh-plugin-update/issues"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "plugin",
     "update",
     "npm"
