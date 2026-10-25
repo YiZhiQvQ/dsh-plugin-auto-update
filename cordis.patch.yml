@@ -6,5 +6,5 @@
 # update itself runs through the profile's own plugin manager (unload +
 # reinstall), which is exactly the sequence the shipped Update action performs.
 - insert:
-    - id: dsh-plugin-auto-update
-      name: dsh-plugin-auto-update
+    - id: dsh-plugin-update
+      name: dsh-plugin-update

@@ -1,4 +1,4 @@
-# dsh-plugin-auto-update
+# dsh-plugin-update
 
 English | [中文](README.zh.md)
 
@@ -66,31 +66,31 @@ None. The plugin manager's own `registry` and `fallbackRegistries` decide which 
 The Client half talks to the Host over three routes, because a plain-JS bundle cannot generate a `@Remote` namespace:
 
 ```
-GET  /plugin-auto-update/state    -> { ok, report, checking }
-POST /plugin-auto-update/check    -> { ok, report }           body: { refresh?: boolean, names?: string[] }
-POST /plugin-auto-update/update   -> { ok, result, report }   body: { name }
+GET  /plugin-update/state    -> { ok, report, checking }
+POST /plugin-update/check    -> { ok, report }           body: { refresh?: boolean, names?: string[] }
+POST /plugin-update/update   -> { ok, result, report }   body: { name }
 ```
 
-Mutations require the `x-plugin-auto-update: 1` header, which a cross-site form cannot set and a cross-origin `fetch` cannot send without a CORS preflight these exact routes never answer.
+Mutations require the `x-plugin-update: 1` header, which a cross-site form cannot set and a cross-origin `fetch` cannot send without a CORS preflight these exact routes never answer.
 
 ## Install
 
 Straight from GitHub, which needs no download first:
 
 ```sh
-dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-auto-update
+dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-update
 ```
 
 A local checkout, which tracks edits in place:
 
 ```sh
-dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-auto-update
+dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-update
 ```
 
 A tarball someone handed you:
 
 ```sh
-dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-auto-update-0.1.0.tgz
+dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-update-0.1.0.tgz
 ```
 
 A tarball records a `file:` dependency pinned to that file's path, so keep the `.tgz` where it is or reinstall after moving it. A directory records a `link:` dependency. A GitHub install records the Git address, which `pnpm` can fetch again at any time.

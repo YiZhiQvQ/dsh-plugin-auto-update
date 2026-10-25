@@ -1,4 +1,4 @@
-# dsh-plugin-auto-update
+# dsh-plugin-update
 
 [English](README.md) | 中文
 
@@ -66,31 +66,31 @@ Host 半部调用 profile 自己的 `pluginManager` 服务，和插件页面、`
 Client 半部通过三条路由和 Host 通信，因为纯 JS 插件包无法生成 `@Remote` 命名空间：
 
 ```
-GET  /plugin-auto-update/state    -> { ok, report, checking }
-POST /plugin-auto-update/check    -> { ok, report }           请求体: { refresh?: boolean, names?: string[] }
-POST /plugin-auto-update/update   -> { ok, result, report }   请求体: { name }
+GET  /plugin-update/state    -> { ok, report, checking }
+POST /plugin-update/check    -> { ok, report }           请求体: { refresh?: boolean, names?: string[] }
+POST /plugin-update/update   -> { ok, result, report }   请求体: { name }
 ```
 
-写操作要求带上 `x-plugin-auto-update: 1` 请求头：跨站表单设不了它，跨域 `fetch` 要带它必须通过 CORS 预检，而这两条精确路由从不响应预检。
+写操作要求带上 `x-plugin-update: 1` 请求头：跨站表单设不了它，跨域 `fetch` 要带它必须通过 CORS 预检，而这两条精确路由从不响应预检。
 
 ## 安装
 
 直接从 GitHub 装（推荐，不需要预先下载）：
 
 ```sh
-dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-auto-update
+dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-update
 ```
 
 本地检出用目录安装，编辑后立即生效：
 
 ```sh
-dsh plugin --profile <profile> install /绝对路径/dsh-plugin-auto-update
+dsh plugin --profile <profile> install /绝对路径/dsh-plugin-update
 ```
 
 从别人发的压缩包安装：
 
 ```sh
-dsh plugin --profile <profile> install /绝对路径/dsh-plugin-auto-update-0.1.0.tgz
+dsh plugin --profile <profile> install /绝对路径/dsh-plugin-update-0.1.0.tgz
 ```
 
 压缩包安装会把依赖记成绑定该文件路径的 `file:` 依赖，所以要把 `.tgz` 留在原地，移走后需要重装；装目录会记成 `link:` 依赖，直接跟随目录里的改动；从 GitHub 安装记的是 Git 地址，随时可以重新拉取。

@@ -1,23 +1,23 @@
 /**
- * dsh-plugin-auto-update — Client half.
+ * dsh-plugin-update — Client half.
  *
  * Contributes to the Plugins page detail view instead of adding a page of its
  * own: a badge beside the title, an action button beside the page's own
  * switch/uninstall, and a small section under the page content.
  *
- *   GET  /plugin-auto-update/state   cached report
- *   POST /plugin-auto-update/check   { refresh?, names? }
- *   POST /plugin-auto-update/update  { name }
+ *   GET  /plugin-update/state   cached report
+ *   POST /plugin-update/check   { refresh?, names? }
+ *   POST /plugin-update/update  { name }
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-plugin-auto-update',
+  id: 'dsh-plugin-update',
   factory(require) {
     'use strict'
     const React = require('react')
     const h = React.createElement
-    const NS = 'dsh-plugin-auto-update'
-    const ENDPOINT = '/plugin-auto-update'
-    const CLIENT_HEADER = 'x-plugin-auto-update'
+    const NS = 'dsh-plugin-update'
+    const ENDPOINT = '/plugin-update'
+    const CLIENT_HEADER = 'x-plugin-update'
     // Flip to true to print the detail page's `subject` in place of the section.
     const DEBUG_SUBJECT = false
 
@@ -469,32 +469,32 @@ window.__ModuleLoader__.load({
           }
         }
 
-        ctx.effect(() => ctx.locale.register(NS, 'en', en), 'plugin-auto-update: en dictionary')
-        ctx.effect(() => ctx.locale.register(NS, 'zh', zh), 'plugin-auto-update: zh dictionary')
+        ctx.effect(() => ctx.locale.register(NS, 'en', en), 'plugin-update: en dictionary')
+        ctx.effect(() => ctx.locale.register(NS, 'zh', zh), 'plugin-update: zh dictionary')
 
         ctx.effect(() => {
           const style = document.createElement('style')
-          style.setAttribute('data-dsh-plugin-auto-update', '')
+          style.setAttribute('data-dsh-plugin-update', '')
           style.textContent = CSS
           document.head.appendChild(style)
           return () => style.remove()
-        }, 'plugin-auto-update: styles')
+        }, 'plugin-update: styles')
 
         ctx.slots.inject('plugins.detail.badge', () => ctx.slots.register({
           name: 'plugins.detail.badge',
-          id: 'dsh-plugin-auto-update',
+          id: 'dsh-plugin-update',
           order: 10,
         }, DetailBadge))
 
         ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
           name: 'plugins.detail.actions',
-          id: 'dsh-plugin-auto-update',
+          id: 'dsh-plugin-update',
           order: 10,
         }, DetailActions))
 
         ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
           name: 'plugins.detail.section',
-          id: 'dsh-plugin-auto-update',
+          id: 'dsh-plugin-update',
           order: 10,
         }, (props) => DetailSection({ ...props, debug: DEBUG_SUBJECT })))
 
@@ -505,7 +505,7 @@ window.__ModuleLoader__.load({
             if (!store.report && !store.checking) void store.load(false)
           }, 2500)
           return () => clearTimeout(timer)
-        }, 'plugin-auto-update: warm check')
+        }, 'plugin-update: warm check')
       },
     }
   },

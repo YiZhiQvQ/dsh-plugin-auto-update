@@ -92,7 +92,7 @@ async function post(routes, path, body) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-plugin-auto-update': '1' },
+      headers: { 'content-type': 'application/json', 'x-plugin-update': '1' },
       body: JSON.stringify(body),
     })
     return { status: response.status, payload: await response.json() }
@@ -117,7 +117,7 @@ test('a successful update removes, installs the new range, and reports the versi
     bundles: [registryBundle()],
     install: (spec) => ({ changed: true, application: 'applied', stage: 'install', target: spec, version: '4.9.4' }),
   })
-  const { status, payload } = await post(routes, '/plugin-auto-update/update', { name: 'dsh-connect-workbuddy' })
+  const { status, payload } = await post(routes, '/plugin-update/update', { name: 'dsh-connect-workbuddy' })
   assert.equal(status, 200)
   assert.equal(payload.ok, true)
   assert.equal(payload.result.from, '4.8.1')
@@ -135,7 +135,7 @@ test('a failed install reinstalls the previous spec', async () => {
       ? { changed: true, application: 'failed', stage: 'install', target: spec, error: { code: 'operation-error' } }
       : { changed: true, application: 'applied', stage: 'install', target: spec, version: '4.8.1' }),
   })
-  const { payload } = await post(routes, '/plugin-auto-update/update', { name: 'dsh-connect-workbuddy' })
+  const { payload } = await post(routes, '/plugin-update/update', { name: 'dsh-connect-workbuddy' })
   assert.equal(payload.ok, false)
   assert.deepEqual(calls.map((call) => call[1]), [
     'dsh-connect-workbuddy',
@@ -150,7 +150,7 @@ test('an exact pin stays exact and a disabled bundle stays disabled', async () =
     bundles: [registryBundle({ source: 'dsh-connect-workbuddy@4.8.1', enabled: false })],
     install: (spec) => ({ changed: true, application: 'applied', stage: 'install', target: spec, version: '4.9.4' }),
   })
-  await post(routes, '/plugin-auto-update/update', { name: 'dsh-connect-workbuddy' })
+  await post(routes, '/plugin-update/update', { name: 'dsh-connect-workbuddy' })
   assert.equal(calls[1][1], 'dsh-connect-workbuddy@4.9.4')
   assert.equal(calls[1][2].enabled, false)
 })
@@ -160,7 +160,7 @@ test('a local link is refused before anything is removed', async () => {
     bundles: [registryBundle({ name: 'dsh-chatmanager', source: 'link:E:/documents/Project/dsh-chatmanager' })],
     install: () => ({ changed: true, application: 'applied' }),
   })
-  const { payload } = await post(routes, '/plugin-auto-update/update', { name: 'dsh-chatmanager' })
+  const { payload } = await post(routes, '/plugin-update/update', { name: 'dsh-chatmanager' })
   assert.equal(payload.ok, false)
   assert.match(payload.result.message, /not installed from a registry/)
   assert.deepEqual(calls, [])
@@ -168,10 +168,10 @@ test('a local link is refused before anything is removed', async () => {
 
 test('the bundle refuses to update itself', async () => {
   const { routes, calls } = mount({
-    bundles: [registryBundle({ name: 'dsh-plugin-auto-update', source: 'dsh-plugin-auto-update@^0.1.0' })],
+    bundles: [registryBundle({ name: 'dsh-plugin-update', source: 'dsh-plugin-update@^0.1.0' })],
     install: () => ({ changed: true, application: 'applied' }),
   })
-  const { payload } = await post(routes, '/plugin-auto-update/update', { name: 'dsh-plugin-auto-update' })
+  const { payload } = await post(routes, '/plugin-update/update', { name: 'dsh-plugin-update' })
   assert.equal(payload.ok, false)
   assert.match(payload.result.message, /cannot update itself/)
   assert.deepEqual(calls, [])
@@ -188,7 +188,7 @@ test('a mutation without the client header is rejected', async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address()
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/plugin-auto-update/update`, {
+    const response = await fetch(`http://127.0.0.1:${port}/plugin-update/update`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'dsh-connect-workbuddy' }),

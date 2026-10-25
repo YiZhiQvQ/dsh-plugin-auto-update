@@ -1,5 +1,5 @@
 {
-  "name": "dsh-plugin-auto-update",
+  "name": "dsh-plugin-update",
   "version": "0.1.0",
   "private": true,
   "type": "module",

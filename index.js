@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-auto-update — Host half.
+ * dsh-plugin-update — Host half.
  *
  * The profile's plugin manager can install, remove and enable bundles, but it
  * never asks npm whether a newer version exists: the Web page only offers
@@ -9,17 +9,17 @@
  *
  * This half answers the missing question and performs the update:
  *
- *   GET  /plugin-auto-update/state   -> { ok, report }         (cached report)
- *   POST /plugin-auto-update/check   -> { ok, report }         (asks npm now)
- *   POST /plugin-auto-update/update  -> { ok, result, report } (one bundle)
+ *   GET  /plugin-update/state   -> { ok, report }         (cached report)
+ *   POST /plugin-update/check   -> { ok, report }         (asks npm now)
+ *   POST /plugin-update/update  -> { ok, result, report } (one bundle)
  *
  * Every mutation goes through `ctx.pluginManager`, the same service the Plugins
  * page and the `plugin_manager` tool use, so the unload/reinstall sequence and
  * the profile's saved state stay identical to a manual Update.
  */
-const ROUTE_PREFIX = '/plugin-auto-update'
-const CLIENT_HEADER = 'x-plugin-auto-update'
-const OWN_PACKAGE = 'dsh-plugin-auto-update'
+const ROUTE_PREFIX = '/plugin-update'
+const CLIENT_HEADER = 'x-plugin-update'
+const OWN_PACKAGE = 'dsh-plugin-update'
 const PACKUMENT_TTL_MS = 10 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 8000
 const MAX_PARALLEL = 4
@@ -29,7 +29,7 @@ export const inject = ['webServer', 'pluginManager']
 
 function log(...args) {
   // eslint-disable-next-line no-console
-  console.log('[dsh-plugin-auto-update]', ...args)
+  console.log('[dsh-plugin-update]', ...args)
 }
 
 function messageOf(error) {
@@ -628,7 +628,7 @@ export function apply(ctx) {
       }
       sendJson(res, 200, { ok: true, report: report ?? null, checking: checkInFlight !== undefined })
     },
-  }), 'plugin-auto-update: state route')
+  }), 'plugin-update: state route')
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
@@ -660,7 +660,7 @@ export function apply(ctx) {
         sendJson(res, 500, { ok: false, error: messageOf(error), report: report ?? null })
       }
     },
-  }), 'plugin-auto-update: check route')
+  }), 'plugin-update: check route')
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
@@ -691,7 +691,7 @@ export function apply(ctx) {
       log('update finished:', name, result.ok ? 'ok' : messageOf(result.message))
       sendJson(res, 200, { ok: result.ok === true, result, report: report ?? null })
     },
-  }), 'plugin-auto-update: update route')
+  }), 'plugin-update: update route')
 
   // Warm the report once so opening the tab does not start from an empty page.
   ctx.effect(() => {
@@ -699,7 +699,7 @@ export function apply(ctx) {
       runCheck(false).catch((error) => log('initial check failed:', messageOf(error)))
     }, 4000)
     return () => clearTimeout(timer)
-  }, 'plugin-auto-update: initial check')
+  }, 'plugin-update: initial check')
 }
 
 // Exported for a script that wants to exercise the range logic without the Host.

@@ -65,9 +65,9 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const { port } = server.address()
 const base = `http://127.0.0.1:${port}`
 
-const check = await fetch(`${base}/plugin-auto-update/check`, {
+const check = await fetch(`${base}/plugin-update/check`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json', 'x-plugin-auto-update': '1' },
+  headers: { 'content-type': 'application/json', 'x-plugin-update': '1' },
   body: JSON.stringify({ refresh: true }),
 })
 const payload = await check.json()
