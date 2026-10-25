@@ -87,7 +87,7 @@ dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-up
 dsh plugin --profile <profile> install /绝对路径/dsh-plugin-update
 ```
 
-从别人发的压缩包安装：
+从 [Releases](https://github.com/YiZhiQvQ/dsh-plugin-update/releases) 下载压缩包：
 
 ```sh
 dsh plugin --profile <profile> install /绝对路径/dsh-plugin-update-0.1.0.tgz

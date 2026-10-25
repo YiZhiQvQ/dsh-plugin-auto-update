@@ -87,7 +87,7 @@ A local checkout, which tracks edits in place:
 dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-update
 ```
 
-A tarball someone handed you:
+From the [Releases](https://github.com/YiZhiQvQ/dsh-plugin-update/releases) page:
 
 ```sh
 dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-update-0.1.0.tgz
