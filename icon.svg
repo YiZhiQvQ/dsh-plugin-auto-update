@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Plugin updates">
+  <defs>
+    <linearGradient id="dshpau-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a9bff"/>
+      <stop offset="1" stop-color="#1f63c8"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#dshpau-bg)"/>
+  <path d="M32 15v23" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M21 30l11 11 11-11" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 49h28" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+</svg>

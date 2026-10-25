@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "插件更新",
+    "description": "检查 npm 上是否发布了该 profile 中插件的新版本，符合条件的可一键更新。"
+  }
+}

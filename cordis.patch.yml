@@ -1,0 +1,10 @@
+# Mount the plugin-update checker.
+#
+# It adds nothing to the sidebar: the Plugins page detail view gets a "检查更新"
+# button beside the page's own switch and uninstall, a "有新版本" badge beside
+# the title when one exists, and a small section under the page content. The
+# update itself runs through the profile's own plugin manager (unload +
+# reinstall), which is exactly the sequence the shipped Update action performs.
+- insert:
+    - id: dsh-plugin-auto-update
+      name: dsh-plugin-auto-update

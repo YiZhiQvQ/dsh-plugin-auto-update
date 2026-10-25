@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Plugin Updates",
+    "description": "Checks npm for newer versions of this profile's registry-installed plugins and updates the compatible ones in one click."
+  }
+}
