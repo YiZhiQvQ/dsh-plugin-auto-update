@@ -75,19 +75,25 @@ Mutations require the `x-plugin-auto-update: 1` header, which a cross-site form 
 
 ## Install
 
-From the Plugins page's add flow, or from a shell:
+Straight from GitHub, which needs no download first:
 
 ```sh
-dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-auto-update-0.1.0.tgz
+dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-auto-update
 ```
 
-A directory works too, and is what a development checkout should use:
+A local checkout, which tracks edits in place:
 
 ```sh
 dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-auto-update
 ```
 
-A tarball records a `file:` dependency pinned to that file's path, so keep the `.tgz` where it is or reinstall after moving it. A directory records a `link:` dependency, which tracks edits in place.
+A tarball someone handed you:
+
+```sh
+dsh plugin --profile <profile> install /absolute/path/to/dsh-plugin-auto-update-0.1.0.tgz
+```
+
+A tarball records a `file:` dependency pinned to that file's path, so keep the `.tgz` where it is or reinstall after moving it. A directory records a `link:` dependency. A GitHub install records the Git address, which `pnpm` can fetch again at any time.
 
 ## Tests
 

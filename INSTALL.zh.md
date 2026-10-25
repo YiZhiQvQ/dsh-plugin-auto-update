@@ -11,7 +11,23 @@
 
 ## 装
 
-### 方式一：在界面里装（推荐）
+### 方式一：从 GitHub 直接装（最省事）
+
+打开 DeepSeek Harness，左侧点 **插件** → 右上角 **+ 添加插件** → 填：
+
+```
+https://github.com/YiZhiQvQ/dsh-plugin-auto-update
+```
+
+或者命令行：
+
+```sh
+dsh plugin --profile desktop install https://github.com/YiZhiQvQ/dsh-plugin-auto-update
+```
+
+这种方式不需要先下载任何文件，以后想更新也可以重新装一次。
+
+### 方式二：装我发的压缩包
 
 1. 把 `dsh-plugin-auto-update-0.1.0.tgz` 放到一个**以后不会移动**的位置，比如 `D:\dsh-plugins\`
    （移动或删掉这个文件后，插件会加载失败，需要重新装一次）
@@ -23,7 +39,7 @@
    ```
 5. 确认安装
 
-### 方式二：命令行
+也可以命令行：
 
 ```sh
 dsh plugin --profile desktop install "D:\dsh-plugins\dsh-plugin-auto-update-0.1.0.tgz"

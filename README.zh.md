@@ -75,19 +75,25 @@ POST /plugin-auto-update/update   -> { ok, result, report }   请求体: { name 
 
 ## 安装
 
-在插件页面的添加流程里装，或者在命令行：
+直接从 GitHub 装（推荐，不需要预先下载）：
 
 ```sh
-dsh plugin --profile <profile> install /绝对路径/dsh-plugin-auto-update-0.1.0.tgz
+dsh plugin --profile <profile> install https://github.com/YiZhiQvQ/dsh-plugin-auto-update
 ```
 
-也可以直接装目录，开发用的检出版本就该这样装：
+本地检出用目录安装，编辑后立即生效：
 
 ```sh
 dsh plugin --profile <profile> install /绝对路径/dsh-plugin-auto-update
 ```
 
-压缩包会把依赖记成绑定该文件路径的 `file:` 依赖，所以要把 `.tgz` 留在原地，移走后需要重装。装目录会记成 `link:` 依赖，直接跟随目录里的改动。
+从别人发的压缩包安装：
+
+```sh
+dsh plugin --profile <profile> install /绝对路径/dsh-plugin-auto-update-0.1.0.tgz
+```
+
+压缩包安装会把依赖记成绑定该文件路径的 `file:` 依赖，所以要把 `.tgz` 留在原地，移走后需要重装；装目录会记成 `link:` 依赖，直接跟随目录里的改动；从 GitHub 安装记的是 Git 地址，随时可以重新拉取。
 
 ## 测试
 
