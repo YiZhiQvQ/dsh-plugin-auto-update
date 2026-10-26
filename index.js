@@ -17,11 +17,21 @@
  * page and the `plugin_manager` tool use, so the unload/reinstall sequence and
  * the profile's saved state stay identical to a manual Update.
  */
+import { execFileSync, spawn } from 'node:child_process'
+import http from 'node:http'
+import tls from 'node:tls'
+
 const ROUTE_PREFIX = '/plugin-update'
 const CLIENT_HEADER = 'x-plugin-update'
 const OWN_PACKAGE = 'dsh-plugin-update'
 const PACKUMENT_TTL_MS = 10 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 8000
+// A raw Git host is slower than a registry from some networks and serves one
+// small file, so it gets its own, longer budget instead of starving the pool.
+const GIT_TIMEOUT_MS = 20000
+// The plugin manager gives a Git spec host five seconds before it gives up, so
+// a probe that waits longer would report a host the install cannot use.
+const GIT_PROBE_TIMEOUT_MS = 5000
 const MAX_PARALLEL = 4
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -299,6 +309,251 @@ function newestVersion(document) {
   return undefined
 }
 
+/**
+ * The `owner/repo` a Git source points at, with any `#ref` fragment and the
+ * `git+`/`.git` decorations removed. Returns `undefined` for a Git address the
+ * raw-manifest lookup cannot address (an arbitrary host, an scp-like remote
+ * without an owner).
+ */
+function gitTarget(source) {
+  if (typeof source !== 'string' || source === '') return undefined
+  const bare = source.replace(/#.*$/, '')
+  const shorthand = /^(?:github|gitlab|bitbucket|gist):([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(bare)
+  if (shorthand) {
+    const host = { github: 'github.com', gitlab: 'gitlab.com', bitbucket: 'bitbucket.org', gist: 'gist.github.com' }[
+      /^([a-z]+):/i.exec(bare)[1].toLowerCase()
+    ]
+    return { host, owner: shorthand[1], repo: shorthand[2] }
+  }
+  const url = /^(?:git\+)?(?:https?|ssh):\/\/(?:[^@/]+@)?([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(bare)
+  if (url) return { host: url[1].toLowerCase(), owner: url[2], repo: url[3] }
+  const scp = /^git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(bare)
+  if (scp) return { host: scp[1].toLowerCase(), owner: scp[2], repo: scp[3] }
+  return undefined
+}
+
+/** The raw-manifest URLs to try for one Git target, in order. */
+function rawManifestUrls(target) {
+  if (!target) return []
+  const { host, owner, repo } = target
+  if (host === 'github.com') {
+    // HEAD follows the repository's default branch, so a rename from main to
+    // master (or the reverse) needs no extra request.
+    return [`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/package.json`]
+  }
+  if (host === 'gitlab.com') {
+    return [`https://gitlab.com/${owner}/${repo}/-/raw/HEAD/package.json`]
+  }
+  if (host === 'bitbucket.org') {
+    return [`https://bitbucket.org/${owner}/${repo}/raw/HEAD/package.json`]
+  }
+  return []
+}
+
+/**
+ * The proxy to reach a raw Git host through, or `undefined` to go direct.
+ *
+ * A DSH process inherits neither `HTTPS_PROXY` nor the Windows Internet
+ * Settings proxy that a shell's `Invoke-WebRequest` honours, so a raw host that
+ * is only reachable through a local proxy fails inside the Host while working
+ * from a terminal. Environment variables come first because they are explicit;
+ * the Windows per-user setting is the fallback that makes the common desktop
+ * setup work without configuration.
+ */
+function proxyFor(url) {
+  // A test or a caller that stubs the global fetch asks for the direct path.
+  if (process.env.DSH_PLUGIN_UPDATE_NO_PROXY === '1') return undefined
+  const env = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy
+  if (typeof env === 'string' && env.trim() !== '') {
+    try {
+      const parsed = new URL(env.trim())
+      return { host: parsed.hostname, port: Number(parsed.port || 8080) }
+    } catch {
+      // A malformed variable is ignored rather than fatal.
+    }
+  }
+  if (process.platform !== 'win32') return undefined
+  const bypass = process.env.NO_PROXY || process.env.no_proxy
+  if (typeof bypass === 'string' && bypass.split(',').some((entry) => entry.trim() !== '' && url.includes(entry.trim()))) {
+    return undefined
+  }
+  try {
+    // Reading the registry needs a child process; it is cheap and only runs
+    // when a Git manifest is actually fetched.
+    const output = execFileSync('reg', [
+      'query',
+      'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
+      '/v', 'ProxyServer',
+    ], { encoding: 'utf8', timeout: 3000, windowsHide: true })
+    const match = /ProxyServer\s+REG_SZ\s+(\S+)/i.exec(output)
+    if (!match) return undefined
+    const value = match[1].includes('=') ? (/https=([^;]+)/i.exec(match[1])?.[1] ?? '') : match[1]
+    const [host, port] = value.split(':')
+    if (!host || !port) return undefined
+    return { host, port: Number(port) }
+  } catch {
+    return undefined
+  }
+}
+
+/** Fetch one URL through `proxy` when one applies, else with the global fetch. */
+async function fetchText(url, signal, timeoutMs) {
+  const proxy = proxyFor(url)
+  if (!proxy) {
+    const response = await fetch(url, {
+      headers: { accept: 'application/json' },
+      redirect: 'follow',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+    })
+    return { status: response.status, text: await response.text() }
+  }
+  return new Promise((resolve, reject) => {
+    const target = new URL(url)
+    const timer = setTimeout(() => {
+      request.destroy(new Error(`timed out after ${timeoutMs} ms`))
+    }, timeoutMs)
+    const request = http.request({
+      host: proxy.host,
+      port: proxy.port,
+      method: 'CONNECT',
+      path: `${target.hostname}:443`,
+    })
+    const fail = (error) => {
+      clearTimeout(timer)
+      reject(error)
+    }
+    request.on('error', fail)
+    request.on('connect', (response, socket) => {
+      if (response.statusCode !== 200) {
+        socket.destroy()
+        fail(new Error(`proxy refused CONNECT with ${response.statusCode}`))
+        return
+      }
+      const secure = tls.connect({ socket, servername: target.hostname }, () => {
+        secure.write(
+          `GET ${target.pathname}${target.search} HTTP/1.1\r\n`
+          + `Host: ${target.hostname}\r\n`
+          + 'Accept: application/json\r\n'
+          + 'Connection: close\r\n\r\n',
+        )
+      })
+      let buffer = ''
+      secure.setEncoding('utf8')
+      secure.on('data', (chunk) => { buffer += chunk })
+      secure.on('error', fail)
+      secure.on('end', () => {
+        clearTimeout(timer)
+        const split = buffer.indexOf('\r\n\r\n')
+        if (split === -1) {
+          reject(new Error('the proxy returned no HTTP response'))
+          return
+        }
+        const head = buffer.slice(0, split)
+        const status = Number(/^HTTP\/\d\.\d (\d{3})/.exec(head)?.[1] ?? 0)
+        resolve({ status, text: buffer.slice(split + 4) })
+      })
+    })
+    request.end()
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        request.destroy(new Error('aborted'))
+      }, { once: true })
+    }
+  })
+}
+
+/**
+ * Whether `git` can open an HTTPS session to the host, checked without a
+ * clone. The plugin manager runs `git` itself and has no proxy support, so a
+ * host reachable only through a proxy fails its install — and the removal that
+ * precedes it would already have happened.
+ */
+async function gitHostReachable(target) {
+  if (!target) return { ok: false, reason: 'the Git address names no host' }
+  // The test suite drives a scripted manager; a real `git` probe would reach
+  // the network and make the assertions depend on it.
+  if (process.env.DSH_PLUGIN_UPDATE_NO_PROXY === '1') return { ok: true }
+  // The plugin manager runs `git` with the environment it was started with and
+  // adds no proxy of its own, so the probe deliberately drops the proxy
+  // variables this bundle would otherwise honour: a host that needs them is a
+  // host the install cannot reach either.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']) {
+    delete env[key]
+  }
+  env.GIT_CONFIG_COUNT = '1'
+  env.GIT_CONFIG_KEY_0 = 'http.proxy'
+  env.GIT_CONFIG_VALUE_0 = ''
+  try {
+    await runGit(['ls-remote', '--heads', `https://${target.host}/${target.owner}/${target.repo}`], env)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: messageOf(error) }
+  }
+}
+
+/** Run `git` with a bounded wait, resolving when it exits 0. */
+function runGit(args, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { env, windowsHide: true })
+    let stderr = ''
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error('git timed out'))
+    }, GIT_PROBE_TIMEOUT_MS)
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(stderr.trim().split('\n').pop() || `git exited ${code}`))
+    })
+  })
+}
+
+/** Read the package manifest a Git source publishes, for its version and engines. */
+async function readRemoteManifest(source, signal) {
+  const urls = rawManifestUrls(gitTarget(source))
+  if (urls.length === 0) {
+    const error = new Error('this Git host publishes no raw manifest this bundle can read')
+    error.permanent = true
+    throw error
+  }
+  let lastError
+  for (const url of urls) {
+    try {
+      const { status, text } = await fetchText(url, signal, GIT_TIMEOUT_MS)
+      if (status === 404) {
+        lastError = new Error(`${gitTarget(source)?.owner}/${gitTarget(source)?.repo} has no package.json on its default branch`)
+        continue
+      }
+      if (status !== 200) {
+        lastError = new Error(`HTTP ${status} reading ${url}`)
+        continue
+      }
+      let document
+      try {
+        document = JSON.parse(text)
+      } catch {
+        lastError = new Error(`${url} is not a package manifest`)
+        continue
+      }
+      if (!document || typeof document !== 'object' || typeof document.version !== 'string') {
+        lastError = new Error(`${url} is not a package manifest`)
+        continue
+      }
+      return document
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError ?? new Error('the remote manifest could not be read')
+}
+
 /** `engines.dsh` else the DSH peer range, as the plugin manager reads them. */
 function dshRequirement(manifest) {
   const engines = manifest?.engines
@@ -314,7 +569,11 @@ function dshRequirement(manifest) {
 
 // ── profile facts ──────────────────────────────────────────────────────────
 
-/** How a saved dependency spec resolves: a registry range or something else. */
+/**
+ * How a saved dependency spec resolves. `git` means a remote repository this
+ * bundle can ask for a newer manifest; `git-unreadable` is a Git address on a
+ * host whose raw files are not reachable, kept separate so the row can say so.
+ */
 function classifySource(source) {
   if (typeof source !== 'string' || source === '') return { kind: 'unknown' }
   if (/^(?:link|file|workspace):/i.test(source)) return { kind: 'local' }
@@ -322,7 +581,8 @@ function classifySource(source) {
     || /^git(?:\+[a-z]+)?:\/\//i.test(source)
     || /^git@/i.test(source)
     || /^https?:\/\/[^/]+\/[^/]+\/[^/#]+(?:\.git)?(?:#.*)?$/i.test(source)) {
-    return { kind: 'git' }
+    const target = gitTarget(source)
+    return rawManifestUrls(target).length > 0 ? { kind: 'git', target } : { kind: 'git-unreadable', target }
   }
   if (/\.(?:tgz|tar\.gz)(?:#.*)?$/i.test(source)) return { kind: 'tarball' }
   if (source.includes('@npm:')) return { kind: 'alias' }
@@ -410,6 +670,7 @@ async function readJsonBody(req) {
 
 export function apply(ctx) {
   const packuments = new Map()
+  const manifests = new Map()
   let report
   let checkInFlight
   let updateInFlight
@@ -438,6 +699,15 @@ export function apply(ctx) {
     return entry
   }
 
+  /** The remote manifest a Git source publishes, cached like a packument. */
+  async function manifestFor(source, refresh, signal) {
+    const cached = manifests.get(source)
+    if (!refresh && cached && Date.now() - cached.at <= PACKUMENT_TTL_MS) return cached.document
+    const document = await readRemoteManifest(source, signal)
+    manifests.set(source, { at: Date.now(), document })
+    return document
+  }
+
   /** Build one row per profile bundle; only registry sources are asked about. */
   async function buildReport(options) {
     const { all, managed } = await profileBundles()
@@ -458,6 +728,37 @@ export function apply(ctx) {
         kind: classification.kind,
         spec: source,
         status: 'unsupported',
+      }
+      if (classification.kind === 'git') {
+        row.channel = 'repository'
+        row.remote = `${classification.target.owner}/${classification.target.repo}`
+        try {
+          const manifest = await manifestFor(source, options.refresh, controller.signal)
+          const latest = parseVersion(manifest.version)
+          const current = parseVersion(bundle.version)
+          row.latest = manifest.version
+          if (!current || !latest) {
+            row.status = 'error'
+            row.reason = 'unreadable version'
+            return row
+          }
+          if (compareVersions(latest, current) <= 0) {
+            row.status = 'current'
+            return row
+          }
+          const requirement = dshRequirement(manifest)
+          if (requirement && runtimeVersion && !satisfies(runtimeVersion, requirement.range)) {
+            row.status = 'incompatible'
+            row.requirement = requirement
+            return row
+          }
+          row.status = 'update'
+          return row
+        } catch (error) {
+          row.status = 'error'
+          row.reason = messageOf(error)
+          return row
+        }
       }
       if (classification.kind !== 'registry') {
         row.reason = classification.kind
@@ -532,10 +833,15 @@ export function apply(ctx) {
     if (checkInFlight) return checkInFlight
     checkInFlight = (async () => {
       try {
-        // A single-bundle check drops just that packument, so the rest of the
-        // report is served from the cache instead of asking every registry again.
+        // A single-bundle check drops just that entry, so the rest of the
+        // report is served from the cache instead of asking every remote again.
         if (Array.isArray(names) && names.length > 0) {
-          for (const name of names) packuments.delete(name)
+          const wanted = new Set(names)
+          for (const name of wanted) packuments.delete(name)
+          const { managed } = await profileBundles()
+          for (const bundle of managed) {
+            if (wanted.has(bundle.name)) manifests.delete(bundle.source)
+          }
         }
         report = await buildReport({ refresh })
         return report
@@ -560,31 +866,73 @@ export function apply(ctx) {
       const { managed } = await profileBundles()
       const bundle = managed.find((candidate) => candidate.name === name)
       if (!bundle) return { ok: false, name, message: `${name} is not a removable profile bundle` }
-      if (classifySource(bundle.source).kind !== 'registry') {
-        return { ok: false, name, message: `${name} was not installed from a registry` }
-      }
-      const registries = registryOrder(await ctx.pluginManager.registries())
-      const entry = await packumentFor(name, registries, true, new AbortController().signal)
-      const newest = newestVersion(entry.document)
-      if (!newest) return { ok: false, name, message: `${name} has no published version` }
-      const range = rangeOf(name, bundle.source)
-      const spec = nextSpec(name, range, newest.version)
+      const classification = classifySource(bundle.source)
       const from = bundle.version
       const previousSpec = bundle.source
       const enabled = bundle.enabled
 
+      let spec
+      let registry
+      let target
+      if (classification.kind === 'git') {
+        // A Git dependency names a branch, not a version: reinstalling the same
+        // spec re-resolves it, which is what an update means for this source.
+        const manifest = await manifestFor(bundle.source, true, new AbortController().signal)
+        const latest = parseVersion(manifest.version)
+        const current = parseVersion(bundle.version)
+        if (!latest || !current) return { ok: false, name, message: `${name} has an unreadable version` }
+        if (compareVersions(latest, current) <= 0) {
+          return {
+            ok: false,
+            upToDate: true,
+            name,
+            from,
+            to: manifest.version,
+            message: `${name} is already at the newest version`,
+          }
+        }
+        spec = previousSpec
+        target = manifest.version
+      } else if (classification.kind === 'registry') {
+        const registries = registryOrder(await ctx.pluginManager.registries())
+        const entry = await packumentFor(name, registries, true, new AbortController().signal)
+        const newest = newestVersion(entry.document)
+        if (!newest) return { ok: false, name, message: `${name} has no published version` }
+        spec = nextSpec(name, rangeOf(name, bundle.source), newest.version)
+        registry = entry.registry
+        target = newest.version
+      } else {
+        return { ok: false, name, message: `${name} was not installed from a registry or a Git repository` }
+      }
+
       const steps = {}
+      // A Git install re-clones the repository, so a host that cannot be
+      // reached right now would leave the bundle removed and unrestorable.
+      // Prove reachability first, while the plugin is still installed.
+      if (classification.kind === 'git') {
+        const reachable = await gitHostReachable(classification.target)
+        if (!reachable.ok) {
+          return {
+            ok: false,
+            name,
+            from,
+            to: target,
+            spec,
+            message: `${classification.target.host} is not reachable from this Host, so ${name} was left installed (${reachable.reason})`,
+          }
+        }
+      }
       steps.remove = await ctx.pluginManager.removeBundle(name)
       if (steps.remove?.error || steps.remove?.application === 'failed') {
-        return { ok: false, name, from, to: newest.version, spec, steps, message: 'removal failed' }
+        return { ok: false, name, from, to: target, spec, steps, message: 'removal failed' }
       }
-      steps.install = await ctx.pluginManager.installBundle(spec, { enabled, registry: entry.registry })
+      steps.install = await ctx.pluginManager.installBundle(spec, { enabled, registry })
       if (steps.install?.error || steps.install?.application === 'failed') {
         const pendingBuilds = steps.install?.pendingBuilds ?? []
         // Leave the person with a working plugin rather than nothing.
         if (typeof previousSpec === 'string' && previousSpec !== '') {
           try {
-            steps.restore = await ctx.pluginManager.installBundle(previousSpec, { enabled, registry: entry.registry })
+            steps.restore = await ctx.pluginManager.installBundle(previousSpec, { enabled, registry })
           } catch (error) {
             steps.restore = { application: 'failed', error: { code: 'operation-error', diagnostic: messageOf(error) } }
           }
@@ -593,7 +941,7 @@ export function apply(ctx) {
           ok: false,
           name,
           from,
-          to: newest.version,
+          to: target,
           spec,
           steps,
           pendingBuilds,
@@ -606,7 +954,7 @@ export function apply(ctx) {
         ok: true,
         name,
         from,
-        to: steps.install.version ?? newest.version,
+        to: steps.install.version ?? target,
         spec,
         steps,
         message: steps.install.application,
@@ -703,4 +1051,7 @@ export function apply(ctx) {
 }
 
 // Exported for a script that wants to exercise the range logic without the Host.
-export const __test = { parseVersion, compareVersions, satisfies, classifySource, nextSpec, newestVersion }
+export const __test = {
+  parseVersion, compareVersions, satisfies, classifySource, nextSpec, newestVersion,
+  gitTarget, rawManifestUrls,
+}

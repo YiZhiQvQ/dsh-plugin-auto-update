@@ -8,7 +8,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const { __test } = await import('../index.js')
-const { parseVersion, compareVersions, satisfies, classifySource, nextSpec, newestVersion } = __test
+const { parseVersion, compareVersions, satisfies, classifySource, nextSpec, newestVersion, gitTarget, rawManifestUrls } = __test
 
 test('parseVersion accepts exact semver only', () => {
   assert.deepEqual(parseVersion('1.2.3'), { major: 1, minor: 2, patch: 3, pre: [] })
@@ -63,10 +63,35 @@ test('classifySource separates registry specs from everything else', () => {
   assert.equal(classifySource('file:../x').kind, 'local')
   assert.equal(classifySource('workspace:*').kind, 'local')
   assert.equal(classifySource('github:user/repo').kind, 'git')
-  assert.equal(classifySource('git+https://example.com/x.git').kind, 'git')
+  assert.equal(classifySource('git+https://github.com/user/repo.git').kind, 'git')
+  assert.equal(classifySource('https://gitlab.com/user/repo').kind, 'git')
+  // A Git host with no raw manifest this bundle can read stays distinct, so the
+  // row can name the reason instead of offering a check that would always fail.
+  assert.equal(classifySource('git+https://example.com/x.git').kind, 'git-unreadable')
   assert.equal(classifySource('https://example.com/x.tgz').kind, 'tarball')
   assert.equal(classifySource('alias@npm:real@1.0.0').kind, 'alias')
   assert.equal(classifySource(undefined).kind, 'unknown')
+})
+
+test('gitTarget reads the owner and repo out of every Git spec form', () => {
+  assert.deepEqual(gitTarget('github:masknull/dsh-qoder-connect'), { host: 'github.com', owner: 'masknull', repo: 'dsh-qoder-connect' })
+  assert.deepEqual(gitTarget('github:user/repo#main'), { host: 'github.com', owner: 'user', repo: 'repo' })
+  assert.deepEqual(gitTarget('git+https://github.com/user/repo.git'), { host: 'github.com', owner: 'user', repo: 'repo' })
+  assert.deepEqual(gitTarget('https://gitlab.com/group/proj'), { host: 'gitlab.com', owner: 'group', repo: 'proj' })
+  assert.deepEqual(gitTarget('git@github.com:user/repo.git'), { host: 'github.com', owner: 'user', repo: 'repo' })
+  assert.equal(gitTarget('link:E:/x'), undefined)
+  assert.equal(gitTarget(undefined), undefined)
+})
+
+test('rawManifestUrls targets the default branch of the hosts it knows', () => {
+  assert.deepEqual(rawManifestUrls(gitTarget('github:user/repo')), [
+    'https://raw.githubusercontent.com/user/repo/HEAD/package.json',
+  ])
+  assert.deepEqual(rawManifestUrls(gitTarget('https://gitlab.com/g/p')), [
+    'https://gitlab.com/g/p/-/raw/HEAD/package.json',
+  ])
+  assert.deepEqual(rawManifestUrls(gitTarget('git+https://example.com/a/b.git')), [])
+  assert.deepEqual(rawManifestUrls(undefined), [])
 })
 
 test('nextSpec keeps the caret or tilde the dependency already used', () => {

@@ -14,16 +14,24 @@ const mod = await import('../index.js')
 /**
  * The route reads npm through the global `fetch`. Serving a canned package
  * document keeps these assertions independent of what the registry publishes
- * today — a real release must not turn a green test red.
+ * today — a real release must not turn a green test red. The proxy path is
+ * disabled so these stubs are what the code actually calls.
  */
+process.env.DSH_PLUGIN_UPDATE_NO_PROXY = '1'
 const PACKUMENTS = {
   'dsh-connect-workbuddy': {
     'dist-tags': { latest: '4.9.4' },
     versions: { '4.8.1': {}, '4.9.4': {} },
   },
 }
+/** Raw manifests a Git source publishes, keyed by `owner/repo`. */
+const MANIFESTS = {
+  'masknull/dsh-qoder-connect': { name: 'dsh-qoder-connect', version: '0.3.0' },
+  'masknull/pinned-plugin': { name: 'pinned-plugin', version: '1.0.0' },
+}
 const realFetch = globalThis.fetch
 const REGISTRY_HOST = /^https?:\/\/registry\.[^/]+\//
+const RAW_HOST = /^https:\/\/raw\.githubusercontent\.com\/([^/]+\/[^/]+)\/HEAD\/package\.json$/
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : String(input?.url ?? input)
   if (REGISTRY_HOST.test(url)) {
@@ -36,6 +44,17 @@ globalThis.fetch = async (input, init) => {
       })
     }
     return new Response('{"error":"not found"}', { status: 404 })
+  }
+  const raw = RAW_HOST.exec(url)
+  if (raw) {
+    const document = MANIFESTS[raw[1]]
+    if (document !== undefined) {
+      return new Response(JSON.stringify(document), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    return new Response('404: Not Found', { status: 404 })
   }
   return realFetch(input, init)
 }
@@ -162,7 +181,43 @@ test('a local link is refused before anything is removed', async () => {
   })
   const { payload } = await post(routes, '/plugin-update/update', { name: 'dsh-chatmanager' })
   assert.equal(payload.ok, false)
-  assert.match(payload.result.message, /not installed from a registry/)
+  assert.match(payload.result.message, /not installed from a registry or a Git repository/)
+  assert.deepEqual(calls, [])
+})
+
+test('a Git source reinstalls its own spec, because the branch carries the update', async () => {
+  const { routes, calls } = mount({
+    bundles: [registryBundle({
+      name: 'dsh-qoder-connect',
+      version: '0.2.11',
+      source: 'github:masknull/dsh-qoder-connect',
+    })],
+    install: () => ({ changed: true, application: 'applied', version: '0.3.0' }),
+  })
+  const { payload } = await post(routes, '/plugin-update/update', { name: 'dsh-qoder-connect' })
+  assert.equal(payload.ok, true)
+  assert.equal(payload.result.from, '0.2.11')
+  assert.equal(payload.result.to, '0.3.0')
+  // The spec is the Git address itself: a version pin would freeze the branch.
+  assert.equal(payload.result.spec, 'github:masknull/dsh-qoder-connect')
+  assert.deepEqual(calls, [
+    ['remove', 'dsh-qoder-connect'],
+    ['install', 'github:masknull/dsh-qoder-connect', { enabled: true, registry: undefined }],
+  ])
+})
+
+test('a Git source already at the remote version is left alone', async () => {
+  const { routes, calls } = mount({
+    bundles: [registryBundle({
+      name: 'pinned-plugin',
+      version: '1.0.0',
+      source: 'github:masknull/pinned-plugin',
+    })],
+    install: () => ({ changed: true, application: 'applied' }),
+  })
+  const { payload } = await post(routes, '/plugin-update/update', { name: 'pinned-plugin' })
+  assert.equal(payload.ok, false)
+  assert.match(payload.result.message, /already at the newest version/)
   assert.deepEqual(calls, [])
 })
 

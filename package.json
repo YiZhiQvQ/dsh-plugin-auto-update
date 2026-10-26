@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Checks npm for newer versions of this profile's registry-installed DSH plugins and updates them in one click.",
+  "description": "Checks npm and Git sources for newer versions of this profile's DSH plugins and updates them in one click.",
   "license": "MIT",
   "repository": {
     "type": "git",

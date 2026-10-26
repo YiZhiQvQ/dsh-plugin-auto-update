@@ -24,17 +24,19 @@ window.__ModuleLoader__.load({
     // ── dictionaries ────────────────────────────────────────────────────────
     const en = {
       check: 'Check for updates',
-      checking: 'Checking npm…',
+      checking: 'Checking…',
       update: 'Update to {version}',
       updating: 'Updating…',
       badgeNew: 'New version {version}',
-      current: 'Up to date with npm',
-      unsupportedLocal: 'Installed from a local package; npm is not asked',
-      unsupportedGit: 'Installed from Git; npm is not asked',
-      unsupportedTarball: 'Installed from a tarball; npm is not asked',
-      unsupportedAlias: 'Installed from an alias; npm is not asked',
-      unsupportedUnknown: 'The install source is not a registry spec',
-      failed: 'npm could not be read: {reason}',
+      current: 'Up to date',
+      sourceNpm: 'npm',
+      sourceGit: 'Git repository',
+      unsupportedLocal: 'Installed from a local package; no remote to compare against',
+      unsupportedGitHost: 'This Git host publishes no manifest this bundle can read',
+      unsupportedTarball: 'Installed from a tarball; no remote to compare against',
+      unsupportedAlias: 'Installed from an alias; no remote to compare against',
+      unsupportedUnknown: 'The install source is not a registry spec or a Git repository',
+      failed: 'Could not read the remote version: {reason}',
       incompatible: 'Version {version} needs DSH {range} ({source}); this profile runs {runtime}',
       installed: 'Installed',
       latest: 'Newest',
@@ -43,6 +45,7 @@ window.__ModuleLoader__.load({
       never: 'Not checked yet',
       updated: 'Updated {name} to {version}',
       updateFailed: 'Could not update {name}: {reason}',
+      alreadyNewest: '{name} is already at the newest version',
       restartRequired: 'Restart DSH to finish loading {name}',
       disabledNote: 'This bundle is switched off; updating keeps it off',
       confirmTitle: 'Update {name}',
@@ -55,17 +58,19 @@ window.__ModuleLoader__.load({
     }
     const zh = {
       check: '检查更新',
-      checking: '正在检查 npm…',
+      checking: '正在检查…',
       update: '更新到 {version}',
       updating: '正在更新…',
       badgeNew: '有新版本 {version}',
-      current: '已与 npm 同步',
-      unsupportedLocal: '本地包安装，不会去问 npm',
-      unsupportedGit: '从 Git 安装，不会去问 npm',
-      unsupportedTarball: '从压缩包安装，不会去问 npm',
-      unsupportedAlias: '通过别名安装，不会去问 npm',
-      unsupportedUnknown: '安装来源不是 npm 仓库',
-      failed: '无法读取 npm：{reason}',
+      current: '已是最新',
+      sourceNpm: 'npm',
+      sourceGit: 'Git 仓库',
+      unsupportedLocal: '本地包安装，没有可比对的远端',
+      unsupportedGitHost: '这个 Git 托管站没有本插件能读取的清单文件',
+      unsupportedTarball: '从压缩包安装，没有可比对的远端',
+      unsupportedAlias: '通过别名安装，没有可比对的远端',
+      unsupportedUnknown: '安装来源既不是 npm 仓库也不是 Git 仓库',
+      failed: '无法读取远端版本：{reason}',
       incompatible: '最新版 {version} 要求 DSH {range}（{source}），当前运行的是 {runtime}',
       installed: '已安装',
       latest: '最新',
@@ -74,6 +79,7 @@ window.__ModuleLoader__.load({
       never: '尚未检查',
       updated: '已将 {name} 更新到 {version}',
       updateFailed: '更新 {name} 失败：{reason}',
+      alreadyNewest: '{name} 已经是最新版本',
       restartRequired: '重启 DSH 后 {name} 才会生效',
       disabledNote: '该插件当前是关闭状态，更新后仍然保持关闭',
       confirmTitle: '更新 {name}',
@@ -239,6 +245,9 @@ window.__ModuleLoader__.load({
             if (result.steps?.install?.application === 'restart-required') {
               this.notify(this.translate('restartRequired', { name }), 'warn')
             }
+          } else if (result.upToDate === true) {
+            // Not a failure: the remote simply matches what is installed.
+            this.notify(this.translate('alreadyNewest', { name }), 'info')
           } else {
             const pending = Array.isArray(result.pendingBuilds) ? result.pendingBuilds : []
             const reason = pending.length > 0
@@ -323,8 +332,12 @@ window.__ModuleLoader__.load({
       if (!name) return null
 
       // A bundle this profile does not own (an installation-provided one) has
-      // nothing to update, so the entry stays out of the way.
-      const canCheck = row === undefined || row.kind === 'registry' || row.status === 'error'
+      // nothing to update, so the entry stays out of the way. A Git source is
+      // checkable: its remote manifest carries the version.
+      const canCheck = row === undefined
+        || row.kind === 'registry'
+        || row.kind === 'git'
+        || row.status === 'error'
       if (!canCheck) return null
 
       const busy = s.updating === name
@@ -370,11 +383,13 @@ window.__ModuleLoader__.load({
       if (!row) return null
       if (row.status === 'current' && row.enabled !== false) {
         // Nothing to report: the page already shows the version and the switch.
+        const origin = row.registry ? `${t('sourceNpm')} ${row.registry}` : row.remote ? `${t('sourceGit')} ${row.remote}` : ''
         return h('div', { className: 'dshpau-section' },
           h('div', { className: 'dshpau-row' },
             h(Icon, { path: GLYPH.refresh }),
             h('span', null, t('current')),
             h('span', null, `${t('latest')} ${row.latest ?? row.current ?? ''}`)),
+          origin !== '' ? h('div', { className: 'dshpau-note' }, origin) : null,
           h('div', { className: 'dshpau-note' }, t('checkedAt', {
             time: formatTime(s.report?.checkedAt, activeLocale(s)),
           })))
@@ -382,7 +397,11 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dshpau-section' },
         h('div', { className: 'dshpau-head' },
           h('h3', { className: 'dshpau-title' }, t('sectionTitle')),
-          row.registry ? h('span', { className: 'dshpau-note' }, `${t('registry')} ${row.registry}`) : null,
+          row.registry
+            ? h('span', { className: 'dshpau-note' }, `${t('registry')} ${row.registry}`)
+            : row.remote
+              ? h('span', { className: 'dshpau-note' }, `${t('sourceGit')} ${row.remote}`)
+              : null,
         ),
         h('div', { className: 'dshpau-row' },
           h('span', null, `${t('installed')} ${row.current ?? '?'}`),
@@ -395,7 +414,7 @@ window.__ModuleLoader__.load({
         row.status === 'unsupported'
           ? h('div', { className: 'dshpau-note' }, t({
             local: 'unsupportedLocal',
-            git: 'unsupportedGit',
+            'git-unreadable': 'unsupportedGitHost',
             tarball: 'unsupportedTarball',
             alias: 'unsupportedAlias',
           }[row.kind] ?? 'unsupportedUnknown'))

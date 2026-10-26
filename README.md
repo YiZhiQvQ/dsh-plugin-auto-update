@@ -22,21 +22,24 @@ Nothing in the sidebar. It contributes to the Plugins page's detail view, so the
 |---|---|
 | Detail page head | **Check for updates** beside the bundle's own switch and uninstall |
 | Beside the title | **New version 4.10.0**, when a newer one exists |
-| Under the page content | Installed → newest, the registry that answered, and the reason when a check fails or the newest version needs a newer DSH |
+| Under the page content | Installed → newest, the source that answered, and the reason when a check fails or the newest version needs a newer DSH |
 
-The page it contributes to is a profile-installed bundle's own page, so a local link, a Git install, or an installation-provided bundle shows the reason it is not asked about instead of a button that cannot work.
+It answers for every source that has a remote to ask:
 
-It asks the same registries the profile's plugin manager asks, in the same order, so a profile behind `registry.npmmirror.com` is checked against the mirror rather than against npmjs.
+- **npm** — the registry document's `latest` tag, through the same registries the profile's plugin manager uses, in the same order. A profile behind `registry.npmmirror.com` is checked against the mirror rather than npmjs.
+- **Git** — the `version` in the repository's `package.json`, read from the default branch. `github:`, `gitlab:`, `bitbucket:`, `git+https://`, and `git@host:owner/repo` all resolve. A Git dependency names a branch rather than a version, so an update reinstalls the same spec and lets the branch supply the new code.
+
+A local link, a tarball, or an alias has no remote to compare against, so the page says so instead of offering a button that cannot work. A Git address on a host with no readable raw file (a self-hosted server) is reported the same way.
 
 Each bundle's check falls into five states:
 
 - **update** — a newer version exists and `engines.dsh` (else the `@deepseek-ai/dsh` peer range) admits the running DSH version.
 - **incompatible** — a newer version exists but requires a DSH this profile does not run. The requirement and its source are shown; no update button appears.
 - **current** — the installed version is the newest one.
-- **error** — the registry could not be read (offline, 404, a malformed document). The reason is shown, and **Check for updates** retries.
-- **unsupported** — the dependency is a local link, a Git address, a tarball, or an alias. These are never touched.
+- **error** — the remote could not be read (offline, 404, a malformed document). The reason is shown, and **Check for updates** retries.
+- **unsupported** — the dependency is a local link, a tarball, an alias, or a Git host this bundle cannot read. These are never touched.
 
-Checking one page asks only that package: the other packages' registry documents come from a ten-minute cache.
+Checking one page asks only that package: the other sources come from a ten-minute cache.
 
 ## How an update runs
 
@@ -46,7 +49,9 @@ The Host half calls the profile's own `pluginManager` service, exactly as the Pl
 2. `installBundle(spec, { enabled, registry })` — installs the new version and reselects the bundle. `enabled` preserves a bundle the person had switched off.
 3. If step 2 fails, the previous spec is installed again, so a failed update does not leave the plugin missing.
 
-The saved spec keeps the range operator the dependency already used: `^4.8.1` becomes `^4.10.0`, not `4.10.0`. A profile that pinned an exact version stays pinned.
+The saved spec keeps the range operator the dependency already used: `^4.8.1` becomes `^4.10.0`, not `4.10.0`. A profile that pinned an exact version stays pinned. A Git dependency keeps its Git address, since a version pin would freeze the branch.
+
+A Git update re-clones the repository, so it checks the host is reachable **before** removing anything. The plugin manager runs `git` with the environment it inherited and adds no proxy of its own; if the host is only reachable through a proxy that `git` does not see, the install would fail after the removal had already happened. The check uses the same no-proxy conditions, so such a host is refused while the plugin stays installed.
 
 With HMR enabled, the replacement applies without a restart; a bundle that was running since startup reports `restart-required`, and the page says so.
 
@@ -55,11 +60,11 @@ The bundle refuses to update itself: removing it would unload the routes answeri
 Two side effects come from the plugin manager, not from this bundle, and they are the same ones the shipped Update performs:
 
 - The reinstalled bundle joins the **end** of `dsh.profile.bundles`. That order is configuration precedence, so a profile where two bundles override the same row sees the updated one win afterwards.
-- A failed or cancelled installation after the removal leaves the package uninstalled; that is why the previous spec is installed again on failure.
+- A failed or cancelled installation after the removal leaves the package uninstalled; that is why the previous spec is installed again on failure, and why a Git host is proved reachable first.
 
 ## Configuration
 
-None. The plugin manager's own `registry` and `fallbackRegistries` decide which registries are asked.
+None. The plugin manager's own `registry` and `fallbackRegistries` decide which registries are asked. Git manifests are read over HTTPS; when `HTTPS_PROXY`/`HTTP_PROXY` is set, or the Windows per-user proxy is configured, that proxy is used for those reads.
 
 ## HTTP surface
 
